@@ -21,7 +21,7 @@ PREFIX                  ?= $(shell pwd)
 BIN_DIR                 ?= $(shell pwd)
 DOCKER_IMAGE_NAME       ?= udzura/container-pids-exporter
 DOCKER_IMAGE_TAG        ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
-
+VERSION                 ?= $(shell cat VERSION)
 
 all: format build test
 
@@ -56,6 +56,9 @@ tarball: crossbuild
 	@echo ">> building release tarball"
 	@$(PROMU) crossbuild tarballs 
 
+release: tarball
+	@$(PROMU) release .tarballs/container_pids_exporter-$(VERSION).linux-amd64.tar.gz
+
 # docker:
 #	@echo ">> building docker image"
 #	@docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
@@ -66,5 +69,5 @@ promu:
 	        $(GO) get -u github.com/prometheus/promu
 
 
-.PHONY: all style format vendor build crossbuild test vet tarball promu
+.PHONY: all style format vendor build crossbuild test vet tarball promu release
 
