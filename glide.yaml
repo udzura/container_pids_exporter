@@ -1,0 +1,12 @@
+package: github.com/udzura/container_pids_exporter
+import:
+- package: github.com/prometheus/client_golang
+  version: ~0.9.0-pre1
+  subpackages:
+  - prometheus
+- package: github.com/prometheus/common
+  subpackages:
+  - log
+  - version
+- package: gopkg.in/alecthomas/kingpin.v2
+  version: ~2.2.5
