@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
@@ -64,28 +65,50 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 		e.cgroupRoot+"/pids",
 		func(dir string, info os.FileInfo, err error) error {
 			if info.IsDir() {
+				log.Debugf("Inspecting: %v", dir)
+				var value []byte
+				var tmp string
+				var v float64
+				var err error
 				containerID := "/" + path.Base(dir)
 				// skip when open failed...
-				if maxValue, err := ioutil.ReadFile(dir + "/pids.max"); err == nil {
-					if v, err := strconv.ParseFloat(string(maxValue), 64); err == nil {
-						ch <- prometheus.MustNewConstMetric(
-							max, prometheus.GaugeValue, v, containerID,
-						)
-					}
+				if value, err = ioutil.ReadFile(dir + "/pids.max"); err != nil {
+					log.Warnf("Something is wrong on Collect: %v", err)
+					return nil
 				}
-				if curValue, err := ioutil.ReadFile(dir + "/pids.current"); err == nil {
-					if v, err := strconv.ParseFloat(string(curValue), 64); err == nil {
-						ch <- prometheus.MustNewConstMetric(
-							current, prometheus.GaugeValue, v, containerID,
-						)
+				if strings.HasPrefix(string(value), "max") {
+					ch <- prometheus.MustNewConstMetric(
+						max, prometheus.GaugeValue, float64(-1), containerID,
+					)
+				} else {
+					tmp = strings.TrimSpace(string(value))
+					if v, err = strconv.ParseFloat(tmp, 64); err != nil {
+						log.Warnf("Something is wrong on Collect: %v", err)
+						return nil
 					}
+					ch <- prometheus.MustNewConstMetric(
+						max, prometheus.GaugeValue, v, containerID,
+					)
 				}
+
+				if value, err = ioutil.ReadFile(dir + "/pids.current"); err != nil {
+					log.Warnf("Something is wrong on Collect: %v", err)
+					return nil
+				}
+				tmp = strings.TrimSpace(string(value))
+				if v, err = strconv.ParseFloat(tmp, 64); err != nil {
+					log.Warnf("Something is wrong on Collect: %v", err)
+					return nil
+				}
+				ch <- prometheus.MustNewConstMetric(
+					current, prometheus.GaugeValue, v, containerID,
+				)
 			}
 			return nil
 		},
 	)
 	if err != nil {
-		log.Warnf("SOmething is wrong on Collect: %v", err)
+		log.Warnf("Something is wrong on Collect: %v", err)
 	}
 }
 
