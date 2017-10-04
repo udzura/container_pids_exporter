@@ -1,8 +1,13 @@
 package main
 
 import (
+	"io/ioutil"
 	"net/http"
+	"os"
+	"path"
+	"path/filepath"
 	"regexp"
+	"strconv"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
@@ -20,20 +25,33 @@ var (
 		"Was the last query of pids check successful.",
 		nil, nil,
 	)
+	max = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, "", "max"),
+		"Current pids.max value of the container.",
+		[]string{"id"}, nil,
+	)
+	current = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, "", "current"),
+		"Current pids.current value of the container.",
+		[]string{"id"}, nil,
+	)
 )
 
 // Exporter collects Consul stats from the given server and exports them using
 // the prometheus metrics package.
 type Exporter struct {
-	filter *regexp.Regexp
+	filter     *regexp.Regexp
+	cgroupRoot string
 }
 
-func NewExporter() (*Exporter, error) {
-	return &Exporter{}, nil
+func NewExporter(root string) (*Exporter, error) {
+	return &Exporter{cgroupRoot: root}, nil
 }
 
 func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- up
+	ch <- max
+	ch <- current
 }
 
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
@@ -41,6 +59,34 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.MustNewConstMetric(
 		up, prometheus.GaugeValue, 1,
 	)
+
+	err := filepath.Walk(
+		e.cgroupRoot+"/pids",
+		func(dir string, info os.FileInfo, err error) error {
+			if info.IsDir() {
+				containerID := "/" + path.Base(dir)
+				// skip when open failed...
+				if maxValue, err := ioutil.ReadFile(dir + "/pids.max"); err == nil {
+					if v, err := strconv.ParseFloat(string(maxValue), 64); err == nil {
+						ch <- prometheus.MustNewConstMetric(
+							max, prometheus.GaugeValue, v, containerID,
+						)
+					}
+				}
+				if curValue, err := ioutil.ReadFile(dir + "/pids.current"); err == nil {
+					if v, err := strconv.ParseFloat(string(curValue), 64); err == nil {
+						ch <- prometheus.MustNewConstMetric(
+							current, prometheus.GaugeValue, v, containerID,
+						)
+					}
+				}
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		log.Warnf("SOmething is wrong on Collect: %v", err)
+	}
 }
 
 func init() {
@@ -57,7 +103,7 @@ func main() {
 	log.Infoln("Starting container_pids_exporter", version.Info())
 	log.Infoln("Build context", version.BuildContext())
 
-	exporter, err := NewExporter()
+	exporter, err := NewExporter("/sys/fs/cgroup")
 	if err != nil {
 		log.Fatalln(err)
 	}
